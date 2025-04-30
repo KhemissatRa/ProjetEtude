@@ -726,7 +726,8 @@ const EditorPreview = forwardRef<EditorPreviewRef, EditorPreviewProps>(
       labels.title.style.fontSize,
       labels.description.style.fontSize,
       ...labels.stats.map(s => s.style?.fontSize)
-    
+    ]);
+
     // --- Elevation Data ---
     useEffect(() => {
       const activityForProfile = activeActivities.find(
@@ -742,13 +743,13 @@ const EditorPreview = forwardRef<EditorPreviewRef, EditorPreviewProps>(
           activityForProfile.trace.features[0].geometry.coordinates;
         const elevationPoints = coords.map((c, i) => ({
           x: i,
-          y: Array.isArray(c) && c.length > 2 && isFinite(c[2]!) ? c[2]! : 0,
+          y: Array.isArray(c) && c.length > 2 && isFinite(c[2]!) ? c[2]! : 0
         }));
         setElevationData(elevationPoints);
       } else {
         setElevationData([]);
       }
-    }, [activeActivities]); // Dependency
+    }, [activeActivities]);
 
     // --- Recenter trace when chartHeight changes ---
     useEffect(() => {
