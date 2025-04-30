@@ -86,7 +86,7 @@ const Header = ({
   };
 
   return (
-    <header className="bg-[#222] w-full text-white border-b border-[#333] h-[61px] z-50 p-4 flex items-center justify-between flex-shrink-0">
+    <header className="bg-[#222] max-w-full text-white border-b border-[#333] h-[61px] z-50 p-4 flex items-center justify-between flex-shrink-0">
       {/* Logo et bouton toggle */}
       <div className="flex items-center space-x-1">
         <NavLink to={"/"} className="text-lg font-sans font-bold">
