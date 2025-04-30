@@ -1,4 +1,3 @@
-import clsx from "clsx";
 import {
   forwardRef,
   useState,
@@ -7,11 +6,9 @@ import {
   useImperativeHandle,
   useCallback,
   useMemo,
-  ForwardedRef,
   RefObject,
 } from "react";
-import { createRoot, Root as ReactDOMRoot } from "react-dom/client";
-import { store, RootState, AppDispatch } from "../store";
+import {  RootState, AppDispatch } from "../store";
 import { useSelector, useDispatch } from "react-redux";
 
 import { LAYOUT_TEMPLATES } from "../store/layoutSlice";
@@ -21,10 +18,8 @@ import { selectSelectedZoom } from "../store/zoomSlice";
 // Mapbox and react-map-gl
 import mapboxgl, {
   Map as MapboxMap,
-  Marker as MapboxMarker,
+  
   LngLatLike,
-  PaddingOptions,
-  MapboxEvent, // Import MapboxEvent if not already imported
 } from "mapbox-gl";
 import MapComponent, {
   Layer,
@@ -55,16 +50,13 @@ import {
 } from "geojson";
 
 // Internal Imports
-import { ZoomLevel, calculateScale } from "../utils/zoomUtils";
+import {  calculateScale } from "../utils/zoomUtils";
 import { exportPdf } from "../utils/pdfUtils";
 import Activity from "../types/Activity";
-import { Point } from "../store/pointsSlice";
 import CustomMarkerContent from "./CustomMarkerContent.tsx";
 import { PAPER_SIZES } from "../store/productSlice.ts";
 import { markExportAsTriggered } from "../store/checkoutSlice";
-import Spinner from "./Spinner";
 import html2canvas from "html2canvas-pro";
-import { initializePoints } from "../store/pointsSlice";
 
 // --- Constants ---
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
@@ -148,27 +140,9 @@ const calculateCombinedBBox = (
   return [minLng, minLat, maxLng, maxLat];
 };
 
-const formatDisplayDuration = (totalSeconds: number): string => {
-  if (isNaN(totalSeconds) || totalSeconds < 0) return "00:00:00";
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = Math.floor(totalSeconds % 60);
-  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(
-    2,
-    "0"
-  )}:${String(seconds).padStart(2, "0")}`;
-};
 
-const formatDisplayDate = (dateString: string | undefined): string => {
-  if (!dateString) return "N/A";
-  const date = new Date(dateString);
-  if (isNaN(date.getTime())) return "N/A";
-  return date.toLocaleDateString("fr-FR", {
-    year: "numeric",
-    month: "numeric",
-    day: "numeric",
-  });
-};
+
+
 
 // --- Component Props & Refs ---
 interface EditorPreviewProps {
@@ -191,7 +165,7 @@ export interface EditorPreviewRef {
 
 // --- EditorPreview Component ---
 const EditorPreview = forwardRef<EditorPreviewRef, EditorPreviewProps>(
-  ({ hideControls = false, ...props }, ref) => {
+  ({ hideControls = false, }, ref) => {
     const dispatch: AppDispatch = useDispatch();
     // --- Listen to orientation ---
     const orientation = useSelector((state: RootState) => state.layout.orientation);
@@ -202,9 +176,7 @@ const EditorPreview = forwardRef<EditorPreviewRef, EditorPreviewProps>(
     const mapRef = useRef<MapRef>(null);
     const mapContainerRef = useRef<HTMLDivElement>(null);
     const mapInstanceRef = useRef<MapboxMap | null>(null);
-    const fitBoundsIdleListenerRef = useRef<(() => void) | null>(null);
     // Ref to track previous activity count
-    const prevActiveActivitiesCountRef = useRef<number>(0);
     // --- State ---
     const [isMapReady, setIsMapReady] = useState(false);
     const [elevationData, setElevationData] = useState<
@@ -220,7 +192,6 @@ const EditorPreview = forwardRef<EditorPreviewRef, EditorPreviewProps>(
       padding: { top: 0, bottom: 0, left: 0, right: 0 }, // Default padding
     });
     // State for forcing map remount
-    const [mapRenderKey, setMapRenderKey] = useState<number>(0);
     // --- Redux Selectors ---
     const points = useSelector((state: RootState) => state.points.points);
     const activeActivityIds = useSelector(
@@ -252,10 +223,7 @@ const EditorPreview = forwardRef<EditorPreviewRef, EditorPreviewProps>(
           : [],
       [activities, activeActivityIds]
     );
-    const firstActiveActivity = useMemo(
-      () => (activeActivities.length > 0 ? activeActivities[0] : null),
-      [activeActivities]
-    );
+   
     const baseDimensions = useMemo(() => {
       const selectedSize = PAPER_SIZES.find(
         (s) => s.id === product.selectedPaperSizeId
@@ -275,10 +243,7 @@ const EditorPreview = forwardRef<EditorPreviewRef, EditorPreviewProps>(
         ? { width: w, height: h }
         : { width: h, height: w };
     }, [baseDimensions, scale, layout.orientation]);
-    const scaledPadding = useMemo(
-      () => Math.min(scaledDimensions.width, scaledDimensions.height) * 0.05,
-      [scaledDimensions]
-    );
+  
 
     // --- Scaled Margins ---
     const scaledMargins = useMemo(
@@ -371,14 +336,7 @@ const EditorPreview = forwardRef<EditorPreviewRef, EditorPreviewProps>(
 
     // *** DEBUGGING LOG ***
     useEffect(() => {
-      if (points.length > 0) {
-        const latestActivityId = activeActivityIds[0]; // Assume latest added is the first active one
-        if (latestActivityId) {
-          const pointsForLatestActivity = points.filter(
-            (p) => p.activityId === latestActivityId
-          );
-        }
-      }
+  
     }, [points, activeActivityIds]); // Log when points or active IDs change
 
     const visiblePoints = useMemo(() => {
@@ -522,8 +480,7 @@ const EditorPreview = forwardRef<EditorPreviewRef, EditorPreviewProps>(
         map.setBearing(viewState.bearing);
 
       // Let Mapbox handle the event type implicitly for the callback
-      // @ts-ignore - Ignoring persistent type error on map.once signature
-      map.once("idle", () => { // Reverted to simplest callback signature
+      map.once("idle", () => {
         if (mapInstanceRef.current) {
           console.log("Map is idle. Resizing and setting ready.");
           mapInstanceRef.current.resize(); // Resize needed after load
@@ -531,7 +488,8 @@ const EditorPreview = forwardRef<EditorPreviewRef, EditorPreviewProps>(
           toggleMapLabels(mapInstanceRef.current, mapStyleState.showLabels);
           toggleMapTerrain(mapInstanceRef.current, mapStyleState.showTerrain);
         }
-      }, 3000); // Reduced timeout slightly? Test this value. Maybe 2000 or 2500?
+      });
+       // Reduced timeout slightly? Test this value. Maybe 2000 or 2500?
       const readyTimeout = setTimeout(() => {
         if (!isMapReady && mapInstanceRef.current) {
           mapInstanceRef.current.resize();
