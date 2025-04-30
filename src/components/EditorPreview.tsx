@@ -11,7 +11,6 @@ import {
 import {  RootState, AppDispatch } from "../store";
 import { useSelector, useDispatch } from "react-redux";
 
-import { LAYOUT_TEMPLATES } from "../store/layoutSlice";
 import { MAP_STYLE_OPTIONS } from "../store/mapSlice";
 import { selectSelectedZoom } from "../store/zoomSlice";
 
@@ -38,12 +37,12 @@ import {
 
 // GeoJSON types
 import {
-  FeatureCollection,
   Feature,
+  FeatureCollection,
   LineString,
   Point as GeoJSONPoint,
   Geometry,
-  GeoJsonProperties,
+  Position
 } from "geojson";
 
 // Internal Imports
@@ -449,7 +448,7 @@ const EditorPreview = forwardRef<EditorPreviewRef, EditorPreviewProps>(
     ]); // Removed isExporting dependency
 
     // --- Map Callbacks & Effects ---
-    const mapInstanceRef = useRef<typeof MapboxMap | null>(null);
+    const mapInstanceRef = useRef<MapRef | null>(null);
 
     // Update map initialization
     const handleMapLoad = useCallback(() => {
@@ -561,7 +560,7 @@ const EditorPreview = forwardRef<EditorPreviewRef, EditorPreviewProps>(
     }, [mapStyleState.showLabels, mapStyleState.selectedStyleId, isMapReady]);
 
     // --- Label Toggling Function ---
-    const toggleMapLabels = (map: MapboxMap | null, show: boolean) => {
+    const toggleMapLabels = (map: MapRef | null, show: boolean) => {
       if (!map || !map.isStyleLoaded()) return;
       const style = map.getStyle();
       if (!style || !style.layers) return;
@@ -582,7 +581,7 @@ const EditorPreview = forwardRef<EditorPreviewRef, EditorPreviewProps>(
     };
 
     // --- Terrain Toggling Function ---
-    const toggleMapTerrain = (map: MapboxMap | null, show: boolean) => {
+    const toggleMapTerrain = (map: MapRef | null, show: boolean) => {
       if (!map || !map.isStyleLoaded()) return;
       const terrainSourceExists = map.getSource("mapbox-dem");
       if (show && terrainSourceExists) {
@@ -662,16 +661,16 @@ const EditorPreview = forwardRef<EditorPreviewRef, EditorPreviewProps>(
         });
       });
       // 3. Calculer BBox et les features
-      const featuresToFit: MapFeature[] = activeActivities.flatMap((activity) => {
+      const featuresToFit: Feature<LineString>[] = activeActivities.flatMap((activity) => {
         if (!activity.trace?.features) return [];
-        return activity.trace.features.filter((f): f is MapFeature => {
+        return activity.trace.features.filter((f): f is Feature<LineString> => {
           return f?.geometry?.type === "LineString" &&
             Array.isArray(f.geometry.coordinates) &&
             f.geometry.coordinates.length > 0;
         });
       });
 
-      const featureCollection: FeatureCollection<LineString | Point> = {
+      const featureCollection: FeatureCollection<LineString> = {
         type: "FeatureCollection",
         features: featuresToFit
       };
@@ -757,16 +756,16 @@ const EditorPreview = forwardRef<EditorPreviewRef, EditorPreviewProps>(
       if (!map || !isMapReady) return;
       // Filtrer les points invalides (NaN, undefined, null)
       const coords = (points || [])
-        .map((p) => [p.longitude, p.latitude])
+        .map((p) => p.coordinate ? [p.coordinate[0], p.coordinate[1]] : [0, 0])
         .filter(([lng, lat]) => Number.isFinite(lng) && Number.isFinite(lat));
       if (coords.length !== (points?.length || 0)) {
         console.warn('Certains points du trace sont invalides et ont été ignorés pour fitBounds.');
       }
       if (coords.length >= 2) {
-        let minLng = Math.min(...coords.map(c => c[0]));
-        let minLat = Math.min(...coords.map(c => c[1]));
-        let maxLng = Math.max(...coords.map(c => c[0]));
-        let maxLat = Math.max(...coords.map(c => c[1]));
+        const minLng = Math.min(...coords.map(c => c[0]));
+        const minLat = Math.min(...coords.map(c => c[1]));
+        const maxLng = Math.max(...coords.map(c => c[0]));
+        const maxLat = Math.max(...coords.map(c => c[1]));
         if ([minLng, minLat, maxLng, maxLat].every(Number.isFinite)) {
           map.fitBounds(
             [[minLng, minLat], [maxLng, maxLat]],
@@ -863,14 +862,6 @@ const EditorPreview = forwardRef<EditorPreviewRef, EditorPreviewProps>(
       // Always return the stats exactly as they are in the Redux store.
       return labels.stats;
     }, [labels.stats]); // Dependency is only labels.stats now
-
-    // --- Get Selected Layout Template ---
-    const selectedLayoutTemplate = useMemo(
-      () =>
-        LAYOUT_TEMPLATES.find((lt) => lt.id === layout.selectedLayoutId) ||
-        LAYOUT_TEMPLATES[0],
-      [layout.selectedLayoutId]
-    );
 
     // --- Get Selected Map Style URL ---
     const mapStyleUrl = useMemo(
