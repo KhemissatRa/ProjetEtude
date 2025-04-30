@@ -16,11 +16,6 @@ import { MAP_STYLE_OPTIONS } from "../store/mapSlice";
 import { selectSelectedZoom } from "../store/zoomSlice";
 
 // Mapbox and react-map-gl
-import mapboxgl, {
-  Map as MapboxMap,
-  
-  LngLatLike,
-} from "mapbox-gl";
 import MapComponent, {
   Layer,
   Source,
@@ -28,6 +23,7 @@ import MapComponent, {
   Marker,
   ViewState,
   NavigationControl, // Import NavigationControl
+  Map as MapboxMap,
 } from "react-map-gl/mapbox";
 import "mapbox-gl/dist/mapbox-gl.css";
 
@@ -47,6 +43,7 @@ import {
   LineString,
   Point as GeoJSONPoint,
   Geometry,
+  GeoJsonProperties,
 } from "geojson";
 
 // Internal Imports
@@ -60,7 +57,6 @@ import html2canvas from "html2canvas-pro";
 
 // --- Constants ---
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN;
-const DEFAULT_CENTER: LngLatLike = [2.3522, 48.8566];
 const DEFAULT_ZOOM = 5;
 const MAX_FIT_BOUNDS_ZOOM = 17;
 
@@ -160,7 +156,6 @@ export interface EditorPreviewRef {
   generatePreviewImage: () => Promise<string | null>;
   containerRef: RefObject<HTMLDivElement | null>;
   mapContainerRef: RefObject<HTMLDivElement | null>;
-  mapInstanceRef: RefObject<MapboxMap | null>;
 }
 
 // --- EditorPreview Component ---
@@ -175,7 +170,6 @@ const EditorPreview = forwardRef<EditorPreviewRef, EditorPreviewProps>(
     const containerRef = useRef<HTMLDivElement>(null);
     const mapRef = useRef<MapRef>(null);
     const mapContainerRef = useRef<HTMLDivElement>(null);
-    const mapInstanceRef = useRef<MapboxMap | null>(null);
     // Ref to track previous activity count
     // --- State ---
     const [isMapReady, setIsMapReady] = useState(false);
@@ -184,8 +178,6 @@ const EditorPreview = forwardRef<EditorPreviewRef, EditorPreviewProps>(
     >([]);
     // State for controlling the viewport
     const [viewState, setViewState] = useState<Partial<ViewState>>({
-      longitude: DEFAULT_CENTER[0],
-      latitude: DEFAULT_CENTER[1],
       zoom: DEFAULT_ZOOM,
       pitch: 0, // Default pitch
       bearing: 0, // Default bearing
@@ -401,7 +393,7 @@ const EditorPreview = forwardRef<EditorPreviewRef, EditorPreviewProps>(
           await exportPdf(
             containerRef,
             mapContainerRef,
-            mapRef as RefObject<MapboxMap | null>
+            mapInstanceRef.current
           );
           if (isCheckout) {
             dispatch(markExportAsTriggered());
@@ -457,56 +449,77 @@ const EditorPreview = forwardRef<EditorPreviewRef, EditorPreviewProps>(
     ]); // Removed isExporting dependency
 
     // --- Map Callbacks & Effects ---
-    const handleMapLoad = useCallback(() => {
-      if (!mapRef.current) return;
-      const map = mapRef.current.getMap();
-      mapInstanceRef.current = map;
-      map.getCanvas().style.cursor = "grab";
-      map.on("mousedown", () => {
-        if (mapInstanceRef.current)
-          mapInstanceRef.current.getCanvas().style.cursor = "grabbing";
-      });
-      map.on("mouseup", () => {
-        if (mapInstanceRef.current)
-          mapInstanceRef.current.getCanvas().style.cursor = "grab";
-      });
-      // Apply pitch/bearing from viewState if different
-      if (viewState.pitch !== undefined && viewState.pitch !== map.getPitch())
-        map.setPitch(viewState.pitch);
-      if (
-        viewState.bearing !== undefined &&
-        viewState.bearing !== map.getBearing()
-      )
-        map.setBearing(viewState.bearing);
+    const mapInstanceRef = useRef<typeof MapboxMap | null>(null);
 
-      // Let Mapbox handle the event type implicitly for the callback
-      map.once("idle", () => {
-        if (mapInstanceRef.current) {
-          console.log("Map is idle. Resizing and setting ready.");
-          mapInstanceRef.current.resize(); // Resize needed after load
+    // Update map initialization
+    const handleMapLoad = useCallback(() => {
+      if (!mapRef.current) {
+        console.warn("Map ref not initialized during load");
+        return;
+      }
+      
+      const map = mapRef.current.getMap();
+      if (!map) {
+        console.warn("Map instance not available during load");
+        return;
+      }
+      
+      mapInstanceRef.current = map;
+      
+      // Set cursor styles
+      const canvas = map.getCanvas();
+      if (canvas) {
+        canvas.style.cursor = "grab";
+        map.on("mousedown", () => {
+          if (canvas) canvas.style.cursor = "grabbing";
+        });
+        map.on("mouseup", () => {
+          if (canvas) canvas.style.cursor = "grab";
+        });
+      }
+      
+      // Apply pitch/bearing from viewState if different
+      if (viewState.pitch !== undefined && viewState.pitch !== map.getPitch()) {
+        map.setPitch(viewState.pitch);
+      }
+      if (viewState.bearing !== undefined && viewState.bearing !== map.getBearing()) {
+        map.setBearing(viewState.bearing);
+      }
+      
+      // Ensure map is properly initialized before proceeding
+      if (!map.isStyleLoaded()) {
+        map.once('style.load', () => {
           setIsMapReady(true);
-          toggleMapLabels(mapInstanceRef.current, mapStyleState.showLabels);
-          toggleMapTerrain(mapInstanceRef.current, mapStyleState.showTerrain);
-        }
-      });
-       // Reduced timeout slightly? Test this value. Maybe 2000 or 2500?
-      const readyTimeout = setTimeout(() => {
-        if (!isMapReady && mapInstanceRef.current) {
-          mapInstanceRef.current.resize();
-          setIsMapReady(true);
-          toggleMapLabels(mapInstanceRef.current, mapStyleState.showLabels);
-          toggleMapTerrain(mapInstanceRef.current, mapStyleState.showTerrain);
-          console.warn("Map idle timeout, forced ready.");
-        }
-      }, 1500); // Reduced timeout to 1.5 seconds
-      map.once("idle", () => clearTimeout(readyTimeout));
+          map.resize();
+          toggleMapLabels(map, mapStyleState.showLabels);
+          toggleMapTerrain(map, mapStyleState.showTerrain);
+        });
+      } else {
+        setIsMapReady(true);
+        map.resize();
+        toggleMapLabels(map, mapStyleState.showLabels);
+        toggleMapTerrain(map, mapStyleState.showTerrain);
+      }
     }, [
-      isMapReady,
       mapStyleState.showLabels,
       mapStyleState.showTerrain,
       viewState.pitch,
-      viewState.bearing,
+      viewState.bearing
     ]);
+
+    // Add error handling for map loading
+    useEffect(() => {
+      const map = mapRef.current?.getMap();
+      if (map) {
+        const errorHandler = (e: { error: Error }) => {
+          console.error('Map error:', e.error);
+        };
+        map.on('error', errorHandler);
+        return () => {
+          map.off('error', errorHandler);
+        };
+      }
+    }, []);
 
     // --- Effect for Map Style Changes (Update viewState too) ---
     useEffect(() => {
@@ -552,10 +565,10 @@ const EditorPreview = forwardRef<EditorPreviewRef, EditorPreviewProps>(
       if (!map || !map.isStyleLoaded()) return;
       const style = map.getStyle();
       if (!style || !style.layers) return;
-      style.layers.forEach((layer) => {
+      
+      style.layers.forEach((layer: mapboxgl.AnyLayer) => {
         if (layer.type === "symbol" && layer.layout?.["text-field"]) {
-          const currentVisibility =
-            map.getLayoutProperty(layer.id, "visibility") ?? "visible";
+          const currentVisibility = map.getLayoutProperty(layer.id, "visibility") ?? "visible";
           const targetVisibility = show ? "visible" : "none";
           if (currentVisibility !== targetVisibility) {
             try {
@@ -649,68 +662,37 @@ const EditorPreview = forwardRef<EditorPreviewRef, EditorPreviewProps>(
         });
       });
       // 3. Calculer BBox et les features
-      const featuresToFit = [];
-      activeActivities.forEach((activity) => {
-        activity.trace?.features?.forEach((f) => {
-          if (
-            f?.geometry?.type === "LineString" &&
+      const featuresToFit: MapFeature[] = activeActivities.flatMap((activity) => {
+        if (!activity.trace?.features) return [];
+        return activity.trace.features.filter((f): f is MapFeature => {
+          return f?.geometry?.type === "LineString" &&
             Array.isArray(f.geometry.coordinates) &&
-            f.geometry.coordinates.length > 0
-          ) {
-            featuresToFit.push(f);
+            f.geometry.coordinates.length > 0;
+        });
+      });
+
+      const featureCollection: FeatureCollection<LineString | Point> = {
+        type: "FeatureCollection",
+        features: featuresToFit
+      };
+      const bbox = calculateCombinedBBox(featureCollection);
+      if (bbox) {
+        // Padding dynamique selon orientation (portrait/landscape)
+        const isPortrait = orientation === "Portrait";
+        const padding = isPortrait
+          ? { top: 80, bottom: 80, left: 60, right: 60 }
+          : { top: 60, bottom: 60, left: 80, right: 80 };
+        currentMap.fitBounds(
+          [
+            [bbox[0], bbox[1]],
+            [bbox[2], bbox[3]],
+          ],
+          {
+            padding,
+            maxZoom: MAX_FIT_BOUNDS_ZOOM,
+            duration: 400,
           }
-        });
-      });
-      points.forEach((p) => {
-        if (
-          p.isVisible &&
-          activeActivityIds.includes(p.activityId) &&
-          Array.isArray(p.coordinate) &&
-          p.coordinate.length >= 2 &&
-          isFinite(p.coordinate[0]) &&
-          isFinite(p.coordinate[1])
-        ) {
-          featuresToFit.push({
-            type: "Feature",
-            geometry: {
-              type: "Point",
-              coordinates: [p.coordinate[0], p.coordinate[1]],
-            },
-            properties: {},
-          });
-        }
-      });
-      if (featuresToFit.length > 0) {
-        // Correction : fitBounds effectif
-        const featureCollection = {
-          type: "FeatureCollection",
-          features: featuresToFit,
-        };
-        const bbox = calculateCombinedBBox(featureCollection);
-        if (bbox) {
-          // Padding dynamique selon orientation (portrait/landscape)
-          const isPortrait = orientation === "Portrait";
-          const padding = isPortrait
-            ? { top: 80, bottom: 80, left: 60, right: 60 }
-            : { top: 60, bottom: 60, left: 80, right: 80 };
-          currentMap.fitBounds(
-            [
-              [bbox[0], bbox[1]],
-              [bbox[2], bbox[3]],
-            ],
-            {
-              padding,
-              maxZoom: MAX_FIT_BOUNDS_ZOOM,
-              duration: 400,
-            }
-          );
-        }
-      } else {
-        currentMap.easeTo({
-          center: DEFAULT_CENTER,
-          zoom: DEFAULT_ZOOM,
-          duration: 300,
-        });
+        );
       }
       console.log("Map adjustment sequence finished.");
     }, [isMapReady, mapInstanceRef, activeActivities, points, activeActivityIds, orientation]);
@@ -744,8 +726,7 @@ const EditorPreview = forwardRef<EditorPreviewRef, EditorPreviewProps>(
       labels.title.style.fontSize,
       labels.description.style.fontSize,
       ...labels.stats.map(s => s.style?.fontSize)
-    ]);
-
+    
     // --- Elevation Data ---
     useEffect(() => {
       const activityForProfile = activeActivities.find(
@@ -1591,7 +1572,7 @@ const EditorPreview = forwardRef<EditorPreviewRef, EditorPreviewProps>(
                     style={{
                       height: `${safeChartHeight * safeScale}px`,
                       width: "100%",
-                      marginBottom: `${20 * scale}px` /* Add some space before stats */,
+                      marginBottom: `${20 * scale}px` /* Add some space */,
                     }}
                   >
                     <ResponsiveContainer>
@@ -2612,10 +2593,11 @@ const EditorPreview = forwardRef<EditorPreviewRef, EditorPreviewProps>(
                               {" "}
                               {stat.label}{" "}
                             </span>
+                            {/* Dotted line */}
                             <span
                               className="absolute left-0 right-0 top-1/2 border-b border-dotted border-gray-400"
                               style={{
-                                borderColor: "rgba(170, 170, 170, 0.7)",
+                                borderColor: scaledStatStyle(stat).color,
                                 transform: "translateY(-50%)",
                               }}
                             ></span>

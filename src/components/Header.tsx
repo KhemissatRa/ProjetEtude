@@ -101,7 +101,7 @@ const Header = ({
         />
       </div>
 
-       {/* Centre : Zoom, Rotation, Réinitialiser */}
+       {/* Centre: Zoom, Rotation, Réinitialiser */}
       <div className="flex items-center space-x-4">
         {/* Sélecteur de zoom */}
         <div className="w-42">
@@ -160,7 +160,7 @@ const Header = ({
         </Button>
       </div>
 
-        {/* Actions droites : Panier + Switcher langue */}
+        {/* Actions droites: Panier + Switcher langue */}
       <div className="flex items-center space-x-4">
          {/* Bouton panier */}
         <Button
